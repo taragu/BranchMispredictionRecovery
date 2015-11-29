@@ -156,7 +156,9 @@ static int ruu_commit_width;
 static int RUU_size = 8;
 
 /* load/store queue (LSQ) size */
-static int LSQ_size = 4;
+//TODO changed from LSQ_size to LQ_size and SQ_size
+static int LQ_size = 4;
+static int SQ_size = 4;
 
 /* l1 data cache config, i.e., {<config>|none} */
 static char *cache_dl1_opt;
@@ -336,8 +338,11 @@ static counter_t IFQ_count;		/* cumulative IFQ occupancy */
 static counter_t IFQ_fcount;		/* cumulative IFQ full count */
 static counter_t RUU_count;		/* cumulative RUU occupancy */
 static counter_t RUU_fcount;		/* cumulative RUU full count */
-static counter_t LSQ_count;		/* cumulative LSQ occupancy */
-static counter_t LSQ_fcount;		/* cumulative LSQ full count */
+//TODO changed
+static counter_t LQ_count;		/* cumulative LQ occupancy */
+static counter_t LQ_fcount;		/* cumulative LQ full count */
+static counter_t SQ_count;		/* cumulative SQ occupancy */
+static counter_t SQ_fcount;		/* cumulative SQ full count */
 
 /* total non-speculative bogus addresses seen (debug var) */
 static counter_t sim_invalid_addrs;
@@ -734,10 +739,20 @@ sim_reg_options(struct opt_odb_t *odb)
 	      /* print */TRUE, /* format */NULL);
 
   /* memory scheduler options  */
+  
+  //  opt_reg_int(odb, "-lsq:size",
+  //	      "load/store queue (LSQ) size",
+  //	      &LSQ_size, /* default */8,
+  //	      /* print */TRUE, /* format */NULL);
+  //TODO changed
+  opt_reg_int(odb, "-lq:size",
+	      "load queue (LQ) size",
+	      &LQ_size, /* default */8,
+	      /* print */TRUE, /* format */NULL);
 
-  opt_reg_int(odb, "-lsq:size",
-	      "load/store queue (LSQ) size",
-	      &LSQ_size, /* default */8,
+  opt_reg_int(odb, "-sq:size",
+	      "store queue (SQ) size",
+	      &SQ_size, /* default */8,
 	      /* print */TRUE, /* format */NULL);
 
   /* cache options */
@@ -1003,8 +1018,12 @@ sim_check_options(struct opt_odb_t *odb,        /* options database */
   if (RUU_size < 2 || (RUU_size & (RUU_size-1)) != 0)
     fatal("RUU size must be a positive number > 1 and a power of two");
 
-  if (LSQ_size < 2 || (LSQ_size & (LSQ_size-1)) != 0)
-    fatal("LSQ size must be a positive number > 1 and a power of two");
+  //TODO changed
+  if (LQ_size < 2 || (LQ_size & (LQ_size-1)) != 0)
+    fatal("LQ size must be a positive number > 1 and a power of two");
+
+  if (SQ_size < 2 || (SQ_size & (SQ_size-1)) != 0)
+    fatal("SQ size must be a positive number > 1 and a power of two");
 
   /* use a level 1 D-cache? */
   if (!mystricmp(cache_dl1_opt, "none"))
@@ -1279,10 +1298,16 @@ sim_reg_stats(struct stat_sdb_t *sdb)   /* stats database */
   stat_reg_formula(sdb, "ruu_full", "fraction of time (cycle's) RUU was full",
                    "RUU_fcount / sim_cycle", /* format */NULL);
 
-  stat_reg_counter(sdb, "LSQ_count", "cumulative LSQ occupancy",
-                   &LSQ_count, /* initial value */0, /* format */NULL);
-  stat_reg_counter(sdb, "LSQ_fcount", "cumulative LSQ full count",
-                   &LSQ_fcount, /* initial value */0, /* format */NULL);
+  //TODO changed
+  stat_reg_counter(sdb, "LQ_count", "cumulative LQ occupancy",
+                   &LQ_count, /* initial value */0, /* format */NULL);
+  stat_reg_counter(sdb, "LQ_fcount", "cumulative LQ full count",
+                   &LQ_fcount, /* initial value */0, /* format */NULL);
+  stat_reg_counter(sdb, "SQ_count", "cumulative SQ occupancy",
+                   &SQ_count, /* initial value */0, /* format */NULL);
+  stat_reg_counter(sdb, "SQ_fcount", "cumulative SQ full count",
+                   &SQ_fcount, /* initial value */0, /* format */NULL);
+
   stat_reg_formula(sdb, "lsq_occupancy", "avg LSQ occupancy (insn's)",
                    "LSQ_count / sim_cycle", /* format */NULL);
   stat_reg_formula(sdb, "lsq_rate", "avg LSQ dispatch rate (insn/cycle)",
@@ -1644,9 +1669,14 @@ ruu_dump(FILE *stream)				/* output stream */
  *   cycle the store executes (using a bypass network), thus stores complete
  *   in effective zero time after their effective address is known
  */
-static struct RUU_station *LSQ;         /* load/store queue */
-static int LSQ_head, LSQ_tail;          /* LSQ head and tail pointers */
-static int LSQ_num;                     /* num entries currently in LSQ */
+
+//TODO changed
+static struct RUU_station *LQ;         /* load queue */
+static int LQ_head, LQ_tail;          /* LQ head and tail pointers */
+static int LQ_num;                     /* num entries currently in LQ */
+static struct RUU_station *SQ;         /* store queue */
+static int SQ_head, SQ_tail;          /* SQ head and tail pointers */
+static int SQ_num;                     /* num entries currently in SQ */
 
 /*
  * input dependencies for stores in the LSQ:
@@ -1663,17 +1693,29 @@ static int LSQ_num;                     /* num entries currently in LSQ */
 static void
 lsq_init(void)
 {
-  LSQ = calloc(LSQ_size, sizeof(struct RUU_station));
-  if (!LSQ)
+  //TODO changed
+  LQ = calloc(LQ_size, sizeof(struct RUU_station));
+  if (!LQ)
     fatal("out of virtual memory");
 
-  LSQ_num = 0;
-  LSQ_head = LSQ_tail = 0;
-  LSQ_count = 0;
-  LSQ_fcount = 0;
+  LQ_num = 0;
+  LQ_head = LQ_tail = 0;
+  LQ_count = 0;
+  LQ_fcount = 0;
+
+  SQ = calloc(SQ_size, sizeof(struct RUU_station));
+  if (!SQ)
+    fatal("out of virtual memory");
+
+  SQ_num = 0;
+  SQ_head = SQ_tail = 0;
+  SQ_count = 0;
+  SQ_fcount = 0;
+
 }
 
 /* dump the contents of the RUU */
+//TODO PICKUP FROM HERE
 static void
 lsq_dump(FILE *stream)				/* output stream */
 {
