@@ -361,7 +361,7 @@ static int spec_mode = FALSE;
 static unsigned ruu_fetch_issue_delay = 0;
 
 /* perfect prediction enabled */
-static int pred_perfect = FALSE;
+static int pred_perfect = TRUE;
 
 /* speculative bpred-update enabled */
 static char *bpred_spec_opt;
