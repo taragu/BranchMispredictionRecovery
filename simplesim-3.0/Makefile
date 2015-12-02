@@ -466,6 +466,11 @@ depend:
 	makedepend.local -n -x $(BINUTILS_INC) $(SRCS)
 
 
+queue: queue.c
+	gcc -o queue -pedantic -std=gnu99 -Wall -Werror queue.c
+
+
+
 # DO NOT DELETE THIS LINE -- make depend depends on it.
 
 main.$(OEXT): host.h misc.h machine.h machine.def endian.h version.h dlite.h
@@ -540,3 +545,6 @@ syscall.$(OEXT): syscall.h
 symbol.$(OEXT): host.h misc.h loader.h machine.h machine.def regs.h memory.h
 symbol.$(OEXT): options.h stats.h eval.h symbol.h target-alpha/ecoff.h
 symbol.$(OEXT): target-alpha/alpha.h
+
+
+
