@@ -219,6 +219,70 @@ static int res_fpalu;
 /* total number of floating point multiplier/dividers available */
 static int res_fpmult;
 
+static int firstLevelCapacity;
+static int secondLevelCapacity;
+static int firstLevelLatency;
+static int secondLevelLatency;
+
+
+/*
+ * two level store queue
+ */
+struct Queue * firstLevel;
+struct Queue * secondLevel;
+
+void enqueueSQ(md_addr_t address) {
+  //first, find if the item is in level 1 or level 2 already; if it's in level 1, delete the item and enqueue it again; if it's in level 2, delete the item and enqueue it again
+  //else (if not in level 1 or level 2
+  int i;
+  int inLevel1 = FALSE;
+  int inLevel2 = FALSE;
+  for (i=0; i<firstLevelCapacity; i++) {
+    if (firstLevel->array[i]==address) {
+      inLevel1 = TRUE;
+    }
+  }
+  for (i=0; i<secondLevelCapacity; i++) {
+    if (secondLevel->array[i]==address) {
+      inLevel2 = TRUE;
+    }
+  }
+  if (inLevel1 || inLevel2) {
+    if (inLevel1) {
+      delete(firstLevel, address);
+      enqueue(firstLevel, address);
+    }
+    if (inLevel2) {
+      delete(secondLevel, address);
+      enqueue(secondLevel, address);
+    }
+  } else {
+    if (!isFull(firstLevel)) {
+      enqueue(firstLevel, address);
+    } else {
+      enqueue(secondLevel, address);
+    }
+  }
+}
+
+int findInSQ(md_addr_t address) {
+  int i;
+  for (i=0; i<firstLevelCapacity; i++) {
+    if (firstLevel->array[i]==address) {
+      return firstLevelLatency;
+    }
+  }
+  for (i=0; i<secondLevelCapacity; i++) {
+    if (secondLevel->array[i]==address) {
+      return secondLevelLatency;
+    }
+  }
+}
+
+
+
+
+
 /* text-based stat profiles */
 #define MAX_PCSTAT_VARS 8
 static int pcstat_nelt = 0;
@@ -754,6 +818,23 @@ sim_reg_options(struct opt_odb_t *odb)
 "    Examples:   -cache:dl1 dl1:4096:32:1:l\n"
 "                -dtlb dtlb:128:4096:32:r\n"
 	       );
+  opt_reg_int(odb, "-2levelstorequeue:firstlevelcapacity",
+	      "capacity of the first level of 2-level store queue",
+	      &firstLevelCapacity, /* default */10,
+	      /* print */TRUE, /* format */NULL);
+  opt_reg_int(odb, "-2levelstorequeue:secondlevelcapacity",
+	      "capacity of the second level of 2-level store queue",
+	      &secondLevelCapacity, /* default */20,
+	      /* print */TRUE, /* format */NULL);
+  opt_reg_int(odb, "-2levelstorequeue:firstlevellatency",
+	      "latency of the first level of 2-level store queue",
+	      &firstLevelLatency, /* default */1,
+	      /* print */TRUE, /* format */NULL);
+  opt_reg_int(odb, "-2levelstorequeue:secondlevellatency",
+	      "latency of the second level of 2-level store queue",
+	      &secondLevelCapacity, /* default */3,
+	      /* print */TRUE, /* format */NULL);
+
 
   opt_reg_int(odb, "-cache:dl1lat",
 	      "l1 data cache hit latency (in cycles)",
@@ -2516,63 +2597,6 @@ ruu_writeback(void)
 
 }
 
-/*
- * two level store queue
- */
-int firstLevelCapacity = 10; //TODO TEMP
-int secondLevelCapacity = 100; //TODO TEMP
-int firstLevelLatency = 2;
-int secondLevelLatency = 4;
-struct Queue * firstLevel = createQueue(firstLevelCapacity);
-struct Queue * secondLevel = createQueue(secondLevelCapacity);
-
-void enqueueSQ(md_addr_t address) {
-  //first, find if the item is in level 1 or level 2 already; if it's in level 1, delete the item and enqueue it again; if it's in level 2, delete the item and enqueue it again
-  //else (if not in level 1 or level 2
-  int i;
-  bool inLevel1 = FALSE;
-  bool inLevel2 = FALSE;
-  for (i=0; i<firstLevelCapacity; i++) {
-    if (firstLevel->array[i]==address) {
-      inLevel1 = TRUE;
-    }
-  }
-  for (i=0; i<secondLevelCapacity; i++) {
-    if (secondLevel->array[i]==address) {
-      inLevel2 = TRUE;
-    }
-  }
-  if (inLevel1 || inLevel2) {
-    if (inLevel1) {
-      delete(firstLevel, address);
-      enqueue(firstLevel, address);
-    }
-    if (inLevel2) {
-      delete(secondLevel, address);
-      enqueue(secondLevel, address);
-    }
-  } else {
-    if (!firstLevel->isFull) {
-      enqueue(firstLevel, address);
-    } else {
-      enqueue(secondLevel, address);
-    }
-  }
-}
-
-int findInSQ(md_addr_t address) {
-  int i;
-  for (i=0; i<firstLevelCapacity; i++) {
-    if (firstLevel->array[i]==address) {
-      return firstLevelLatency;
-    }
-  }
-  for (i=0; i<secondLevelCapacity; i++) {
-    if (secondLevel->array[i]==address) {
-      return secondLevelLatency;
-    }
-  }
-}
 
 /*
  *  LSQ_REFRESH() - memory access dependence checker/scheduler
@@ -2647,7 +2671,7 @@ lsq_refresh(void)
 	    {
 	      /* no STA or STD unknown conflicts, put load on ready queue */
 	      //TODO find LSQ[index].addr in store queue
-	      sim_cycle += findInSQ(LSQ[Index].addr);
+	      sim_cycle += findInSQ(LSQ[index].addr);
 	      readyq_enqueue(&LSQ[index]);
 	    }
 	}
@@ -4494,6 +4518,10 @@ sim_main(void)
   /* set up program entry state */
   regs.regs_PC = ld_prog_entry;
   regs.regs_NPC = regs.regs_PC + sizeof(md_inst_t);
+
+  /*create 2-level store queues*/
+  firstLevel = createQueue(firstLevelCapacity);
+  secondLevel = createQueue(secondLevelCapacity);
 
   /* check for DLite debugger entry condition */
   if (dlite_check_break(regs.regs_PC, /* no access */0, /* addr */0, 0, 0))
