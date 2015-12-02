@@ -2521,9 +2521,58 @@ ruu_writeback(void)
  */
 int firstLevelCapacity = 10; //TODO TEMP
 int secondLevelCapacity = 100; //TODO TEMP
+int firstLevelLatency = 2;
+int secondLevelLatency = 4;
 struct Queue * firstLevel = createQueue(firstLevelCapacity);
 struct Queue * secondLevel = createQueue(secondLevelCapacity);
 
+void enqueueSQ(md_addr_t address) {
+  //first, find if the item is in level 1 or level 2 already; if it's in level 1, delete the item and enqueue it again; if it's in level 2, delete the item and enqueue it again
+  //else (if not in level 1 or level 2
+  int i;
+  bool inLevel1 = FALSE;
+  bool inLevel2 = FALSE;
+  for (i=0; i<firstLevelCapacity; i++) {
+    if (firstLevel->array[i]==address) {
+      inLevel1 = TRUE;
+    }
+  }
+  for (i=0; i<secondLevelCapacity; i++) {
+    if (secondLevel->array[i]==address) {
+      inLevel2 = TRUE;
+    }
+  }
+  if (inLevel1 || inLevel2) {
+    if (inLevel1) {
+      delete(firstLevel, address);
+      enqueue(firstLevel, address);
+    }
+    if (inLevel2) {
+      delete(secondLevel, address);
+      enqueue(secondLevel, address);
+    }
+  } else {
+    if (!firstLevel->isFull) {
+      enqueue(firstLevel, address);
+    } else {
+      enqueue(secondLevel, address);
+    }
+  }
+}
+
+int findInSQ(md_addr_t address) {
+  int i;
+  for (i=0; i<firstLevelCapacity; i++) {
+    if (firstLevel->array[i]==address) {
+      return firstLevelLatency;
+    }
+  }
+  for (i=0; i<secondLevelCapacity; i++) {
+    if (secondLevel->array[i]==address) {
+      return secondLevelLatency;
+    }
+  }
+}
 
 /*
  *  LSQ_REFRESH() - memory access dependence checker/scheduler
@@ -2597,6 +2646,8 @@ lsq_refresh(void)
 	  if (j == n_std_unknowns)
 	    {
 	      /* no STA or STD unknown conflicts, put load on ready queue */
+	      //TODO find LSQ[index].addr in store queue
+	      sim_cycle += findInSQ(LSQ[Index].addr);
 	      readyq_enqueue(&LSQ[index]);
 	    }
 	}
@@ -3961,6 +4012,9 @@ ruu_dispatch(void)
 	      lsq->stack_recover_idx = 0;
 	      lsq->spec_mode = spec_mode;
 	      lsq->addr = addr;
+	      //TODO ADD ADDR TO STORE QUEUE
+	      enqueueSQ(addr);
+	      
 	      /* lsq->tag is already set */
 	      lsq->seq = ++inst_seq;
 	      lsq->queued = lsq->issued = lsq->completed = FALSE;
