@@ -467,7 +467,7 @@ depend:
 
 
 queue: queue.c
-	gcc -o queue -pedantic -std=gnu99 -Wall -Werror queue.c
+	gcc -o queue -pedantic -std=gnu99 queue.c
 
 
 

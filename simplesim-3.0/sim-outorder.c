@@ -72,7 +72,7 @@
 #include "ptrace.h"
 #include "dlite.h"
 #include "sim.h"
-
+#include "queue.h"
 /*
  * This file implements a very detailed out-of-order issue superscalar
  * processor with a two-level memory system and speculative execution support.
@@ -2515,6 +2515,14 @@ ruu_writeback(void)
    } /* for all writeback events */
 
 }
+
+/*
+ * two level store queue
+ */
+int firstLevelCapacity = 10; //TODO TEMP
+int secondLevelCapacity = 100; //TODO TEMP
+struct Queue * firstLevel = createQueue(firstLevelCapacity);
+struct Queue * secondLevel = createQueue(secondLevelCapacity);
 
 
 /*

@@ -1,13 +1,29 @@
+#ifndef QUEUE_H
+#define QUEUE_H
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <limits.h>
+#include <stdarg.h>
+#include <string.h>
+#include <ctype.h>
+#include <errno.h>
+
+#if defined(__alpha) || defined(linux)
+#include <unistd.h>
+#endif /* __alpha || linux */
+
+#include "host.h"
+#include "misc.h"
+#include "machine.h"
+
 //code taken from http://geeksquiz.com/queue-set-1introduction-and-array-implementation/
 
 struct Queue
 {
   int front, rear, size;
   unsigned capacity;
-  int* array;
+  md_addr_t * array;
 };
  
 struct Queue* createQueue(unsigned capacity)
@@ -16,18 +32,19 @@ struct Queue* createQueue(unsigned capacity)
   queue->capacity = capacity;
   queue->front = queue->size = 0; 
   queue->rear = capacity - 1; 
-  queue->array = (int*) malloc(queue->capacity * sizeof(int));
+  queue->array = (md_addr_t*) malloc(queue->capacity * sizeof(int));
   return queue;
 }
 
 //returns new queue with the item deleted
-struct Queue* delete(struct Queue* queue, int item) {
+struct Queue* delete(struct Queue* queue, md_addr_t item) {
   //make new queue without the element
   struct Queue* newQueue = createQueue(queue->capacity);
   newQueue->capacity = queue->capacity;
   newQueue->size = queue->size-1;
   int newQueueIndex = 0;
-  for (int i=0; i<queue->capacity; i++) {
+  int i;
+  for (i=0; i<queue->capacity; i++) {
     if (queue->array[i] != item) {
       newQueue->array[newQueueIndex] = queue->array[i];
       newQueueIndex++;
@@ -51,22 +68,22 @@ int isEmpty(struct Queue* queue)
 {  return (queue->size == 0); }
  
 // Function to add an item to the queue.  It changes rear and size
-void enqueue(struct Queue* queue, int item)
+void enqueue(struct Queue* queue, md_addr_t item)
 {
   if (isFull(queue))
     return;
   queue->rear = (queue->rear + 1)%queue->capacity;
   queue->array[queue->rear] = item;
   queue->size = queue->size + 1;
-  printf("%d enqueued to queue\n", item);
+  //  printf("%d enqueued to queue\n", item);
 }
  
 // Function to remove an item from queue.  It changes front and size
-int dequeue(struct Queue* queue)
+md_addr_t dequeue(struct Queue* queue)
 {
   if (isEmpty(queue))
     return INT_MIN;
-  int item = queue->array[queue->front];
+  md_addr_t item = queue->array[queue->front];
   queue->front = (queue->front + 1)%queue->capacity;
   queue->size = queue->size - 1;
   return item;
@@ -81,13 +98,13 @@ int front(struct Queue* queue)
 }
  
 // Function to get rear of queue
-int rear(struct Queue* queue)
+md_addr_t rear(struct Queue* queue)
 {
   if (isEmpty(queue))
     return INT_MIN;
   return queue->array[queue->rear];
 }
-
+/**
 void printQueue(struct Queue* queue) {
   for (int i=0; i<queue->capacity; i++) {
     if (i==queue->front) {
@@ -99,11 +116,10 @@ void printQueue(struct Queue* queue) {
     printf("%d   ", queue->array[i]);
   }
   printf("\n\n\n");
-}
+  }*/
  
 // Driver program to test above functions./
-int main()
-{
+/** int main(){
   struct Queue* queue = createQueue(1000);
  
   enqueue(queue, 10);
@@ -122,3 +138,5 @@ int main()
   printQueue(newQueue);
   return 0;
 }
+*/
+#endif
