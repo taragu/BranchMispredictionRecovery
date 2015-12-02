@@ -32,7 +32,7 @@ struct Queue* createQueue(unsigned capacity)
   queue->capacity = capacity;
   queue->front = queue->size = 0; 
   queue->rear = capacity - 1; 
-  queue->array = (md_addr_t*) malloc(queue->capacity * sizeof(int));
+  queue->array = (md_addr_t*) malloc(queue->capacity * sizeof(md_addr_t));
   return queue;
 }
 

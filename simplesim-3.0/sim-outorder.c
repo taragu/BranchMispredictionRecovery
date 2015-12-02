@@ -250,17 +250,33 @@ void enqueueSQ(md_addr_t address) {
   }
   if (inLevel1 || inLevel2) {
     if (inLevel1) {
-      delete(firstLevel, address);
-      enqueue(firstLevel, address);
-    }
-    if (inLevel2) {
-      delete(secondLevel, address);
-      enqueue(secondLevel, address);
+      struct Queue * oldQueue = firstLevel;
+      struct Queue * newQueue = delete(firstLevel, address);
+      free(oldQueue);
+      firstLevel = newQueue;
+      if (!isFull(firstLevel)) {
+	enqueue(firstLevel, address);
+      } else if (!isFull(secondLevel)) {
+	enqueue(secondLevel, address);
+      }
+    } else if (inLevel2) {
+      struct Queue * oldQueue = secondLevel;
+      struct Queue * newQueue = delete(secondLevel, address);
+      free(oldQueue);
+      secondLevel = newQueue;
+      if (!isFull(firstLevel)) {
+	enqueue(firstLevel, address);
+      } else if (!isFull(secondLevel)) {
+	enqueue(secondLevel, address);
+      }
     }
   } else {
     if (!isFull(firstLevel)) {
       enqueue(firstLevel, address);
-    } else {
+    } else if (!isFull(secondLevel)) {
+      enqueue(secondLevel, address);
+    } else { //put it in level 2
+      dequeue(secondLevel);
       enqueue(secondLevel, address);
     }
   }
@@ -4054,7 +4070,9 @@ ruu_dispatch(void)
 	      lsq->spec_mode = spec_mode;
 	      lsq->addr = addr;
 	      //TODO ADD ADDR TO STORE QUEUE
-	      enqueueSQ(addr);
+	      if (enable_2LevelStoreQueue)  {
+		enqueueSQ(addr);
+	      }
 	      
 	      /* lsq->tag is already set */
 	      lsq->seq = ++inst_seq;
