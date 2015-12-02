@@ -219,11 +219,12 @@ static int res_fpalu;
 /* total number of floating point multiplier/dividers available */
 static int res_fpmult;
 
+static int enable_2LevelStoreQueue;
 static int firstLevelCapacity;
 static int secondLevelCapacity;
 static int firstLevelLatency;
 static int secondLevelLatency;
-
+static int defaultNon2LevelSQLatency;
 
 /*
  * two level store queue
@@ -277,6 +278,7 @@ int findInSQ(md_addr_t address) {
       return secondLevelLatency;
     }
   }
+  return 0;
 }
 
 
@@ -818,21 +820,32 @@ sim_reg_options(struct opt_odb_t *odb)
 "    Examples:   -cache:dl1 dl1:4096:32:1:l\n"
 "                -dtlb dtlb:128:4096:32:r\n"
 	       );
+
+  opt_reg_int(odb, "-2levelstorequeue:enable",
+	      "enable the first level of 2-level store queue",
+	      &enable_2LevelStoreQueue, /* default */FALSE,
+	      /* print */TRUE, /* format */NULL);
+  opt_reg_int(odb, "-2levelstorequeue:defaultNon2LevelSQLatency",
+	      "default store to load forwarding latency if 2-level store queue is not used",
+	      &defaultNon2LevelSQLatency, /* default */3,
+	      /* print */TRUE, /* format */NULL);
+
   opt_reg_int(odb, "-2levelstorequeue:firstlevelcapacity",
 	      "capacity of the first level of 2-level store queue",
-	      &firstLevelCapacity, /* default */10,
+	      &firstLevelCapacity, /* default */5,
 	      /* print */TRUE, /* format */NULL);
   opt_reg_int(odb, "-2levelstorequeue:secondlevelcapacity",
 	      "capacity of the second level of 2-level store queue",
-	      &secondLevelCapacity, /* default */20,
+	      &secondLevelCapacity, /* default */10,
 	      /* print */TRUE, /* format */NULL);
+
   opt_reg_int(odb, "-2levelstorequeue:firstlevellatency",
 	      "latency of the first level of 2-level store queue",
 	      &firstLevelLatency, /* default */1,
 	      /* print */TRUE, /* format */NULL);
   opt_reg_int(odb, "-2levelstorequeue:secondlevellatency",
 	      "latency of the second level of 2-level store queue",
-	      &secondLevelCapacity, /* default */3,
+	      &secondLevelLatency, /* default */3,
 	      /* print */TRUE, /* format */NULL);
 
 
@@ -2671,7 +2684,11 @@ lsq_refresh(void)
 	    {
 	      /* no STA or STD unknown conflicts, put load on ready queue */
 	      //TODO find LSQ[index].addr in store queue
-	      sim_cycle += findInSQ(LSQ[index].addr);
+	      if (enable_2LevelStoreQueue) {
+		sim_cycle += findInSQ(LSQ[index].addr);
+	      } else {
+		sim_cycle += defaultNon2LevelSQLatency;
+	      }
 	      readyq_enqueue(&LSQ[index]);
 	    }
 	}
