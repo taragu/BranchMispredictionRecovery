@@ -54,7 +54,7 @@
 #include <math.h>
 #include <assert.h>
 #include <signal.h>
-
+#include <stdbool.h>
 #include "host.h"
 #include "misc.h"
 #include "machine.h"
@@ -72,6 +72,69 @@
 #include "ptrace.h"
 #include "dlite.h"
 #include "sim.h"
+
+
+
+struct regbuff_t {
+  int capacity;
+  int size;
+  int* regs;
+  //int head;
+  //int tail;
+};
+
+typedef struct regbuff_t regbuff;
+
+static regbuff* makeregbuff(int capacity){
+  regbuff* buff;
+  int* regs;
+  regs = calloc(capacity, sizeof(int));
+  buff = calloc(1, sizeof(regbuff));
+  if(!buff){
+    fatal("out of virtual memory");
+  }
+  buff->capacity = capacity;
+  buff->size = 0;
+  buff->regs = regs;
+}
+
+static bool containsbuff(regbuff* buff, int reg){
+  if(reg == NA) return false;
+  int i = 0;
+  bool success = true;
+  for(i = 0; i < buff->size; i++){
+    if(buff->regs[i]==reg){
+      success = false;
+      break;
+    }
+  }
+
+  return success;
+}
+
+static bool addtoregbuff(regbuff* buff, int reg){
+  if(reg == NA) return true;
+  bool success = containsbuff(buff, reg);
+  if(success != false){
+    if(buff->size>=buff->capacity){
+      buff->regs[0] = reg;
+    } else{
+      buff->regs[buff->size] = reg;
+      buff->size++;
+    }
+  }
+  return success;
+}
+
+static void cleanregbuff(regbuff* buff){
+  buff->size = 0;
+}
+
+static void destroybuff(regbuff * buff){
+  free(buff->regs);
+  free(buff);
+}
+
 
 /*
  * This file implements a very detailed out-of-order issue superscalar
@@ -1534,10 +1597,16 @@ static struct RUU_station *RUU;		/* register update unit */
 static int RUU_head, RUU_tail;		/* RUU head and tail pointers */
 static int RUU_num;			/* num entries currently in RUU */
 
+typedef struct regbuff_t regbuff;
+//register buffer
+static struct regbuff_t *REGB;
+
+static int REGB_size = 64;
 /* allocate and initialize register update unit (RUU) */
 static void
 ruu_init(void)
 {
+  REGB = makeregbuff(REGB_size);
   RUU = calloc(RUU_size, sizeof(struct RUU_station));
   if (!RUU)
     fatal("out of virtual memory");
@@ -2283,13 +2352,15 @@ ruu_commit(void)
 static void
 ruu_recover(int branch_index)			/* index of mis-pred branch */
 {
-  int i, RUU_index = RUU_tail, LSQ_index = LSQ_tail;
+  int i,j, RUU_index = RUU_tail, LSQ_index = LSQ_tail;
   int RUU_prev_tail = RUU_tail, LSQ_prev_tail = LSQ_tail;
-
+  enum md_opcode op;
   /* recover from the tail of the RUU towards the head until the branch index
      is reached, this direction ensures that the LSQ can be synchronized with
      the RUU */
 
+  //clean regbuff
+  cleanregbuff(REGB);
   /* go to first element to squash */
   RUU_index = (RUU_index + (RUU_size-1)) % RUU_size;
   LSQ_index = (LSQ_index + (LSQ_size-1)) % LSQ_size;
@@ -2305,6 +2376,12 @@ ruu_recover(int branch_index)			/* index of mis-pred branch */
       if (RUU_index == RUU_head)
 	panic("RUU head and tail broken");
 
+      //put output dependencies to RB
+      for(j=0; j< MAX_ODEPS;j++){
+        addtoregbuff(REGB, RUU[RUU_index].onames[j]);
+      }
+      
+      
       /* is this operation an effective addr calc for a load or store? */
       if (RUU[RUU_index].ea_comp)
 	{
@@ -2610,10 +2687,12 @@ lsq_refresh(void)
 static void
 ruu_issue(void)
 {
-  int i, load_lat, tlb_lat, n_issued;
+  int i,j, load_lat, tlb_lat, n_issued;
   struct RS_link *node, *next_node;
   struct res_template *fu;
-
+  enum md_opcode op;
+  md_inst_t inst;
+  bool isDup = false;
   /* FIXME: could be a little more efficient when scanning the ready queue */
 
   /* copy and then blow away the ready list, NOTE: the ready list is
@@ -2637,7 +2716,18 @@ ruu_issue(void)
       if (RSLINK_VALID(node))
 	{
 	  struct RUU_station *rs = RSLINK_RS(node);
+          //check if it is duplicate
+            inst = rs->IR;
+          MD_SET_OPCODE(op, rs->IR);
+        
+          if(containsbuff(REGB,RA) || containsbuff(REGB, RB)){
+            isDup = false;
+          } else isDup = true;
 
+          //put outs to RB
+            for(j = 0; j < MAX_ODEPS;j++)
+              addtoregbuff(REGB, rs->onames[j]);
+      
 	  /* issue operation, both reg and mem deps have been satisfied */
 	  if (!OPERANDS_READY(rs) || !rs->queued
 	      || rs->issued || rs->completed)
@@ -2670,7 +2760,7 @@ ruu_issue(void)
 	  else
 	    {
 	      /* issue the instruction to a functional unit */
-	      if (MD_OP_FUCLASS(rs->op) != NA)
+	      if (isDup == false && MD_OP_FUCLASS(rs->op) != NA)
 		{
 		  fu = res_get(fu_pool, MD_OP_FUCLASS(rs->op));
 		  if (fu)
@@ -2802,7 +2892,7 @@ ruu_issue(void)
 				  rs->ea_comp ? PEV_AGEN : 0);
 
 		  /* one more inst issued */
-		  n_issued++;
+		  //n_issued++;
 		}
 	    } /* !store */
 
@@ -3700,6 +3790,7 @@ static struct RS_link last_op = RSLINK_NULL_DATA;
 static void
 ruu_dispatch(void)
 {
+  //bool isDup = false;
   int i;
   int n_dispatched;			/* total insts dispatched */
   md_inst_t inst;			/* actual instruction bits */
@@ -3830,6 +3921,8 @@ ruu_dispatch(void)
 	  in1 = NA; in2 = NA; in3 = NA;
 	  /* no EXPR */
 	}
+
+
       /* operation sets next PC */
 
       /* print retirement trace if in verbose mode */
@@ -3848,7 +3941,7 @@ ruu_dispatch(void)
 	      fault, regs.regs_PC);
 
       /* update memory access stats */
-      if (MD_OP_FLAGS(op) & F_MEM)
+      if ((MD_OP_FLAGS(op) & F_MEM))
 	{
 	  sim_total_refs++;
 	  if (!spec_mode)
@@ -3979,7 +4072,7 @@ ruu_dispatch(void)
 			    /* idep_ready[] index */STORE_ADDR_INDEX/* 1 */,
 			    DTMP);
 	      ruu_link_idep(lsq, /* idep_ready[] index */2, NA);
-
+ 
 	      /* install output after inputs to prevent self reference */
 	      ruu_install_odep(lsq, /* odep_list[] index */0, out1);
 	      ruu_install_odep(lsq, /* odep_list[] index */1, out2);
