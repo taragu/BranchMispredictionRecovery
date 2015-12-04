@@ -232,7 +232,22 @@ static int defaultNon2LevelSQLatency;
 struct Queue * firstLevel;
 struct Queue * secondLevel;
 
+void checkFull() {
+	while (isFull(firstLevel)) {
+		md_addr_t addressRemove = dequeue(firstLevel);
+		while (isFull(secondLevel)) {
+			dequeue(secondLevel);
+		}
+		enqueue(secondLevel, addressRemove);
+	}
+	while (isFull(secondLevel)) {
+		dequeue(secondLevel);
+	}
+}
+
 void enqueueSQ(md_addr_t address) {
+
+	checkFull();
   //first, find if the item is in level 1 or level 2 already; if it's in level 1, delete the item and enqueue it again; if it's in level 2, delete the item and enqueue it again
   //else (if not in level 1 or level 2
   int i;
@@ -254,43 +269,38 @@ void enqueueSQ(md_addr_t address) {
       struct Queue * newQueue = delete(firstLevel, address);
       free(oldQueue);
       firstLevel = newQueue;
-      if (!isFull(firstLevel)) {
-	enqueue(firstLevel, address);
-      } else if (!isFull(secondLevel)) {
-	enqueue(secondLevel, address);
-      }
     } else if (inLevel2) {
       struct Queue * oldQueue = secondLevel;
       struct Queue * newQueue = delete(secondLevel, address);
       free(oldQueue);
       secondLevel = newQueue;
-      if (!isFull(firstLevel)) {
-	enqueue(firstLevel, address);
-      } else if (!isFull(secondLevel)) {
-	enqueue(secondLevel, address);
-      }
-    }
-  } else {
-    if (!isFull(firstLevel)) {
-      enqueue(firstLevel, address);
-    } else if (!isFull(secondLevel)) {
-      enqueue(secondLevel, address);
-    } else { //put it in level 2
-      dequeue(secondLevel);
-      enqueue(secondLevel, address);
     }
   }
+           checkFull();
+      enqueue(firstLevel, address);
 }
 
 int findInSQ(md_addr_t address) {
   int i;
   for (i=0; i<firstLevelCapacity; i++) {
     if (firstLevel->array[i]==address) {
+    	struct Queue * oldQueue = firstLevel;
+      struct Queue * newQueue = delete(firstLevel, address);
+      free(oldQueue);
+      firstLevel = newQueue;
+      checkFull();
+      enqueue(firstLevel, address);
       return firstLevelLatency;
     }
   }
   for (i=0; i<secondLevelCapacity; i++) {
     if (secondLevel->array[i]==address) {
+    	      struct Queue * oldQueue = secondLevel;
+      struct Queue * newQueue = delete(secondLevel, address);
+      free(oldQueue);
+      secondLevel = newQueue;
+    	checkFull();
+      enqueue(firstLevel, address);
       return secondLevelLatency;
     }
   }
